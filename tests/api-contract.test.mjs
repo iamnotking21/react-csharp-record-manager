@@ -7,14 +7,50 @@
 // message that says exactly what to do about it.
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const BASE = 'http://localhost:5080';
 const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'server');
-const BOOT_TIMEOUT_MS = 90_000;
+// The first `dotnet run` restores and builds, which is slow on a cold machine.
+const BOOT_TIMEOUT_MS = 180_000;
+
+/**
+ * Resolve the dotnet executable without going through a shell. Spawning via a
+ * shell would make `child.pid` the shell's, leaving the real server orphaned at
+ * teardown and hanging the test runner. On Windows the SDK is often installed
+ * after the current shell captured its PATH, so fall back to the default path.
+ */
+function resolveDotnet() {
+  const fallback = process.platform === 'win32'
+    ? join(process.env.ProgramFiles ?? 'C:\Program Files', 'dotnet', 'dotnet.exe')
+    : '/usr/share/dotnet/dotnet';
+
+  for (const candidate of ['dotnet', fallback]) {
+    try {
+      execFileSync(candidate, ['--version'], { stdio: 'ignore' });
+      return candidate;
+    } catch {
+      if (candidate !== 'dotnet' && existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** Kill the server and everything it spawned. `child.kill()` misses the tree. */
+function killTree(pid) {
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      process.kill(-pid, 'SIGTERM');
+    }
+  } catch {
+    // already gone
+  }
+}
 
 let child = null;
 let startedByUs = false;
@@ -28,23 +64,23 @@ async function isUp() {
   }
 }
 
-async function hasDotnet() {
-  const probe = spawn('dotnet', ['--version'], { shell: true, stdio: 'ignore' });
-  const [code] = await once(probe, 'close');
-  return code === 0;
-}
-
 before(async () => {
   if (await isUp()) return; // already running, reuse it
 
+  const dotnet = resolveDotnet();
   assert.ok(
-    await hasDotnet(),
+    dotnet,
     'The .NET SDK is not installed, so the API cannot start and every fetch from ' +
       'the client will fail with "Failed to fetch". Install .NET 8 ' +
-      '(winget install Microsoft.DotNet.SDK.8), reopen the terminal, then re-run.',
+      '(winget install --id Microsoft.DotNet.SDK.8 --source winget), reopen the ' +
+      'terminal, then re-run.',
   );
 
-  child = spawn('dotnet', ['run'], { cwd: SERVER_DIR, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(dotnet, ['run'], {
+    cwd: SERVER_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+  });
   let log = '';
   child.stdout.on('data', (d) => (log += d));
   child.stderr.on('data', (d) => (log += d));
@@ -62,7 +98,12 @@ before(async () => {
 }, { timeout: BOOT_TIMEOUT_MS + 10_000 });
 
 after(() => {
-  if (startedByUs && child?.exitCode === null) child.kill();
+  if (!startedByUs || child?.pid === undefined || child.exitCode !== null) return;
+  killTree(child.pid);
+  // Release the pipes so the runner's event loop can drain and node can exit.
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
 });
 
 test('GET /api/records returns the six seeded records in camelCase', async () => {

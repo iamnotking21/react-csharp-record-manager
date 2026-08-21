@@ -115,6 +115,9 @@ If the .NET SDK is missing, that file fails immediately with the reason rather
 than timing out - it is the test that reproduces
 `Failed to fetch. Is the API running on http://localhost:5080?`.
 
+The server is spawned without a shell and torn down with a process-tree kill, so
+the runner never leaves an API listening on 5080 after the suite finishes.
+
 ## Design notes
 
 **State lives in `App.jsx`.** The list, the detail panel and the summary all

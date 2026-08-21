@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Test runner scripts. No dependencies - tests use Node's built-in node:test.",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test tests/records.test.mjs tests/api-client.test.mjs tests/api-contract.test.mjs",
     "test:unit": "node --test tests/records.test.mjs tests/api-client.test.mjs",
     "test:contract": "node --test tests/api-contract.test.mjs"
   }
