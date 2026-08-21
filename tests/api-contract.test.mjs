@@ -21,7 +21,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_DIR = join(ROOT, 'server');
 const ARTIFACTS_DIR = join(ROOT, '.test-artifacts');
 // The first `dotnet run` restores and builds, which is slow on a cold machine.
-const BOOT_TIMEOUT_MS = 180_000;
+const BOOT_TIMEOUT_MS = 60_000; // the build happens separately, before this clock starts
+// The hook also restores and builds, which is slow the first time on a cold machine.
+const SETUP_TIMEOUT_MS = 300_000;
 
 /**
  * Resolve the dotnet executable without going through a shell. Spawning via a
@@ -87,10 +89,25 @@ before(async () => {
       'terminal, then re-run.',
   );
 
-  // A private artifacts directory. Without it the build fails with MSB3021 when
-  // a dev server is already running, because that process holds bin/.../server.exe
-  // open and MSBuild cannot overwrite it.
-  child = spawn(dotnet, ['run', '--no-launch-profile', '--artifacts-path', ARTIFACTS_DIR], {
+  // Build into a private artifacts directory rather than server/bin. A running
+  // dev server holds bin/.../server.exe open, and MSBuild fails with MSB3021
+  // when it cannot overwrite it.
+  try {
+    execFileSync(dotnet, ['build', '--artifacts-path', ARTIFACTS_DIR], {
+      cwd: SERVER_DIR,
+      stdio: 'pipe',
+    });
+  } catch (err) {
+    assert.fail(`The API failed to build.
+${err.stdout ?? ''}${err.stderr ?? ''}`);
+  }
+
+  // Run the built DLL directly. `dotnet run --artifacts-path` still launches
+  // server/bin/.../server.exe, which does not exist in a fresh clone.
+  const dll = join(ARTIFACTS_DIR, 'bin', 'server', 'debug', 'server.dll');
+  assert.ok(existsSync(dll), `Expected a built server at ${dll}`);
+
+  child = spawn(dotnet, [dll], {
     cwd: SERVER_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
@@ -109,7 +126,7 @@ before(async () => {
     await new Promise((r) => setTimeout(r, 750));
   }
   assert.fail(`The API did not answer on ${BASE} within ${BOOT_TIMEOUT_MS}ms. Output:\n${log}`);
-}, { timeout: BOOT_TIMEOUT_MS + 10_000 });
+}, { timeout: SETUP_TIMEOUT_MS });
 
 after(() => {
   if (child?.pid === undefined || child.exitCode !== null) return;
