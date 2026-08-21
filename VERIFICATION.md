@@ -37,7 +37,7 @@ inferred from the source.
 |---|---|---|
 | `tests/records.test.mjs` | 12 | no |
 | `tests/api-client.test.mjs` | 5 | no |
-| `tests/api-contract.test.mjs` | 8 | starts it itself |
+| `tests/api-contract.test.mjs` | 8 | starts its own on port 5081 |
 
 ## Constraints
 

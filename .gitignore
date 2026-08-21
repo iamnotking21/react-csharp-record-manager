@@ -13,3 +13,6 @@ obj/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Test build output
+.test-artifacts/

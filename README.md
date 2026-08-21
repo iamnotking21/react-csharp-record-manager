@@ -94,8 +94,10 @@ npm test
 | Script | Covers | Needs the API running? |
 |---|---|---|
 | `npm run test:unit` | Record helpers and the fetch wrapper | No |
-| `npm run test:contract` | Every API endpoint, end to end | Yes - starts it for you |
-| `npm test` | Everything | Yes |
+| `npm run test:contract` | Every API endpoint, end to end | No - starts its own on 5081 |
+| `npm test` | Everything | No |
+
+You can run the suite with `dotnet run` and `npm run dev` still going.
 
 `tests/records.test.mjs` pins the rules that are easy to break by accident:
 `replaceRecord` returns a new array and leaves both the input array and every
@@ -107,11 +109,17 @@ blank name, or a save already in flight.
 body - including that `id` is left out of the payload - and that a non-2xx
 response throws with the method, path and status.
 
-`tests/api-contract.test.mjs` starts `dotnet run` in `server/`, waits for port
-5080, then exercises every endpoint against the real API: camelCase keys, the
-seed distribution, 404s, whitespace trimming, the blank-name 400, that a body
-`id` cannot re-key a record, that an edit survives a re-read, and that the CORS
-header names the Vite origin. It reuses an already-running API if it finds one.
+`tests/api-contract.test.mjs` starts its own `dotnet run` in `server/` and
+exercises every endpoint against the real API: camelCase keys, the seed
+distribution, 404s, whitespace trimming, the blank-name 400, that a body `id`
+cannot re-key a record, that an edit survives a re-read, and that the CORS header
+names the Vite origin.
+
+It runs on port **5081**, not the dev port, and refuses to reuse an API it did
+not start. The assertions are against the seed data, and the store is in memory,
+so a dev server you have been clicking around in would fail them for the wrong
+reason. It also builds into its own `.test-artifacts/` directory, so it does not
+collide with a running dev server holding `bin/` open.
 
 If the .NET SDK is missing, that file fails immediately with the reason rather
 than timing out - it is the test that reproduces

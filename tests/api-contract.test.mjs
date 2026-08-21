@@ -1,8 +1,8 @@
 // End-to-end contract tests against the real C# Minimal API.
 //
-// Starts `dotnet run` in ./server, waits for port 5080, exercises every
-// endpoint, then shuts it down. This is the test that catches the
-// "Failed to fetch. Is the API running on http://localhost:5080?" symptom:
+// Starts its own `dotnet run` in ./server on a private port, exercises every
+// endpoint against the freshly seeded store, then shuts it down. This is the
+// test that catches the "Failed to fetch. Is the API running?" symptom:
 // if the .NET SDK is missing or the API will not boot, it fails here with a
 // message that says exactly what to do about it.
 import test, { after, before } from 'node:test';
@@ -12,8 +12,14 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const BASE = 'http://localhost:5080';
-const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'server');
+// A private port, deliberately not the dev port. The tests assert absolute
+// counts against the seed data, so they must never run against a long-running
+// dev API whose in-memory store has already been edited by hand.
+const PORT = 5081;
+const BASE = `http://localhost:${PORT}`;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const SERVER_DIR = join(ROOT, 'server');
+const ARTIFACTS_DIR = join(ROOT, '.test-artifacts');
 // The first `dotnet run` restores and builds, which is slow on a cold machine.
 const BOOT_TIMEOUT_MS = 180_000;
 
@@ -53,7 +59,6 @@ function killTree(pid) {
 }
 
 let child = null;
-let startedByUs = false;
 
 async function isUp() {
   try {
@@ -65,7 +70,13 @@ async function isUp() {
 }
 
 before(async () => {
-  if (await isUp()) return; // already running, reuse it
+  assert.equal(
+    await isUp(),
+    false,
+    `Something is already listening on ${BASE}. These tests need a freshly ` +
+      'seeded API, so they start their own on this port rather than reusing one. ' +
+      'Stop whatever is on it and re-run.',
+  );
 
   const dotnet = resolveDotnet();
   assert.ok(
@@ -76,15 +87,18 @@ before(async () => {
       'terminal, then re-run.',
   );
 
-  child = spawn(dotnet, ['run'], {
+  // A private artifacts directory. Without it the build fails with MSB3021 when
+  // a dev server is already running, because that process holds bin/.../server.exe
+  // open and MSBuild cannot overwrite it.
+  child = spawn(dotnet, ['run', '--no-launch-profile', '--artifacts-path', ARTIFACTS_DIR], {
     cwd: SERVER_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
+    env: { ...process.env, ASPNETCORE_URLS: BASE },
   });
   let log = '';
   child.stdout.on('data', (d) => (log += d));
   child.stderr.on('data', (d) => (log += d));
-  startedByUs = true;
 
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -98,7 +112,7 @@ before(async () => {
 }, { timeout: BOOT_TIMEOUT_MS + 10_000 });
 
 after(() => {
-  if (!startedByUs || child?.pid === undefined || child.exitCode !== null) return;
+  if (child?.pid === undefined || child.exitCode !== null) return;
   killTree(child.pid);
   // Release the pipes so the runner's event loop can drain and node can exit.
   child.stdout?.destroy();
