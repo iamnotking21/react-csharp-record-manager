@@ -1,1 +1,114 @@
 # react-csharp-record-manager
+
+A small full-stack record manager: a React front end (Vite) over a C# .NET 8
+Minimal API. Records are held in an in-memory list on the server — there is no
+database, no data file and no external API. The list is seeded with hard-coded
+starting data, and edits made through the UI persist for as long as the API
+process is running.
+
+Built under a deliberate constraint: **no packages beyond the two project
+templates.** The client uses `fetch`, `useState` and `useMemo`; the server uses
+only what ships in the ASP.NET Core shared framework (CORS included).
+
+## Prerequisites
+
+| Tool | Version |
+|---|---|
+| .NET SDK | 8.0 or later |
+| Node.js | 18 or later (developed on 24) |
+
+## Running it
+
+Two terminals, from the repository root.
+
+**Terminal 1 — API (http://localhost:5080)**
+
+```bash
+cd server
+dotnet run
+```
+
+**Terminal 2 — client (http://localhost:5173)**
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173.
+
+The API port is fixed in `server/Properties/launchSettings.json`. If 5080 is
+taken, change it there and update `API_BASE` at the top of `client/src/api.js`
+to match. If the client port moves off 5173, add the new origin to the CORS
+policy in `server/Program.cs`.
+
+## API
+
+Base URL: `http://localhost:5080`
+
+| Method | Route | Behaviour |
+|---|---|---|
+| `GET` | `/api/records` | Returns all records |
+| `GET` | `/api/records/{id}` | Returns one record, `404` if it does not exist |
+| `PUT` | `/api/records/{id}` | Updates the editable fields and returns the updated record. `404` if missing, `400` if `name` is blank |
+
+`PUT` accepts `{ name, category, status, description }`. The id comes from the
+route, not the body, so a mismatched payload cannot re-key a record.
+
+## Project layout
+
+```
+├── server/                       # .NET 8 Minimal API
+│   ├── Program.cs                # endpoints, CORS policy, in-memory seed data
+│   ├── Models/RecordItem.cs      # stored record
+│   ├── Models/RecordUpdate.cs    # PUT payload
+│   └── server.csproj
+├── client/                       # Vite + React
+│   └── src/
+│       ├── App.jsx               # owns state, fetches, derives the counts
+│       ├── api.js                # thin fetch wrapper
+│       └── components/
+│           ├── RecordList.jsx    # scrollable three-column list, row select
+│           ├── RecordDetail.jsx  # controlled inputs over a local draft
+│           └── SummaryBar.jsx    # derived output
+└── PLAN.md                       # the plan this was built from
+```
+
+## Design notes
+
+**State lives in `App.jsx`.** The list, the detail panel and the summary all
+read from one `records` array, so they cannot disagree with each other.
+
+**The detail panel edits a local `draft` copy.** Typing never touches the
+canonical record, which is what makes "unsaved changes" detectable and keeps the
+summary counts still until a save actually succeeds. The draft is re-seeded
+during render whenever the incoming record changes identity — a different row
+was selected, or a save returned a fresh object — rather than in an effect, so
+there is no second render pass and no window where a stale record is on screen.
+
+**Counts are derived, never stored.** `total`, `selectedCount` and the
+`byStatus` grouping are computed from `records` on every render (`byStatus`
+memoised on `records`). Nothing calls `setState` with a count, so the numbers
+cannot drift out of sync with the data.
+
+**Updates are immutable.** Saving replaces one element via
+`records.map(r => r.id === saved.id ? saved : r)` — a new array with a new object
+for the changed row. No `push`, no `splice`, no writing into an existing object.
+
+**Keys are stable ids.** Rows use `key={record.id}`, never the array index, so
+React keeps row identity correct when values change.
+
+**Accessibility.** The list is a `role="grid"`; rows are focusable, expose
+`aria-selected`, and respond to Enter and Space as well as click.
+
+**Persistence caveat.** The server mutates its `List<RecordItem>` in place, so
+edits survive a browser refresh but reset to the seed data when the API process
+restarts. That is intentional given the no-database constraint.
+
+## Dependencies
+
+No packages were added beyond the two templates.
+
+- `client/package.json` is the unmodified `npm create vite@latest -- --template react` dependency set (react, react-dom, vite, @vitejs/plugin-react, oxlint, types).
+- `server/server.csproj` has no `<PackageReference>` at all.
