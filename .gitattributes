@@ -1,0 +1,2 @@
+# Keep the video script Notepad-friendly on Windows checkouts
+*.txt text eol=crlf

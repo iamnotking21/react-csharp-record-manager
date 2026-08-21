@@ -79,7 +79,7 @@ route, not the body, so a mismatched payload cannot re-key a record.
 │   └── api-contract.test.mjs     # live API, boots the server
 ├── PLAN.md                       # the plan this was built from
 ├── VERIFICATION.md               # the verification pass, criterion by criterion
-└── SCRIPT.md                     # walkthrough video script
+└── SCRIPT.txt                    # walkthrough video script
 ```
 
 ## Tests
