@@ -77,9 +77,7 @@ route, not the body, so a mismatched payload cannot re-key a record.
 │   ├── records.test.mjs          # immutability + derived counts
 │   ├── api-client.test.mjs       # fetch wrapper, stubbed
 │   └── api-contract.test.mjs     # live API, boots the server
-├── PLAN.md                       # the plan this was built from
-├── VERIFICATION.md               # the verification pass, criterion by criterion
-└── SCRIPT.txt                    # walkthrough video script
+└── VERIFICATION.md               # the verification pass, criterion by criterion
 ```
 
 ## Tests
