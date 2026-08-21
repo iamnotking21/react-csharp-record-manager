@@ -3,6 +3,7 @@ import RecordList from './components/RecordList';
 import RecordDetail from './components/RecordDetail';
 import SummaryBar from './components/SummaryBar';
 import { getRecords, updateRecord } from './api';
+import { findSelected, groupByStatus, replaceRecord } from './lib/records';
 import './App.css';
 
 export default function App() {
@@ -39,21 +40,14 @@ export default function App() {
   // counts can never drift out of sync with the list.
   const total = records.length;
   const selectedCount = selectedId === null ? 0 : 1;
-  const selected = records.find((r) => r.id === selectedId) ?? null;
+  const selected = findSelected(records, selectedId);
 
-  const byStatus = useMemo(
-    () =>
-      records.reduce((acc, r) => {
-        acc[r.status] = (acc[r.status] ?? 0) + 1;
-        return acc;
-      }, {}),
-    [records],
-  );
+  const byStatus = useMemo(() => groupByStatus(records), [records]);
 
   const handleSave = useCallback(async (draft) => {
     const saved = await updateRecord(draft.id, draft);
     // Immutable replace: new array, new object reference for the saved row.
-    setRecords((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+    setRecords((prev) => replaceRecord(prev, saved));
     return saved;
   }, []);
 

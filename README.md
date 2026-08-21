@@ -68,12 +68,52 @@ route, not the body, so a mismatched payload cannot re-key a record.
 │   └── src/
 │       ├── App.jsx               # owns state, fetches, derives the counts
 │       ├── api.js                # thin fetch wrapper
+│       ├── lib/records.js        # pure helpers, unit-tested
 │       └── components/
 │           ├── RecordList.jsx    # scrollable three-column list, row select
 │           ├── RecordDetail.jsx  # controlled inputs over a local draft
 │           └── SummaryBar.jsx    # derived output
+├── tests/                        # node:test suite, zero dependencies
+│   ├── records.test.mjs          # immutability + derived counts
+│   ├── api-client.test.mjs       # fetch wrapper, stubbed
+│   └── api-contract.test.mjs     # live API, boots the server
 └── PLAN.md                       # the plan this was built from
 ```
+
+## Tests
+
+The suite uses Node's built-in `node:test` runner. **No test framework and no
+packages were installed** - it runs on a bare Node install.
+
+```bash
+npm test
+```
+
+| Script | Covers | Needs the API running? |
+|---|---|---|
+| `npm run test:unit` | Record helpers and the fetch wrapper | No |
+| `npm run test:contract` | Every API endpoint, end to end | Yes - starts it for you |
+| `npm test` | Everything | Yes |
+
+`tests/records.test.mjs` pins the rules that are easy to break by accident:
+`replaceRecord` returns a new array and leaves both the input array and every
+untouched record referentially intact, `groupByStatus` matches the seed
+distribution and follows an edit, and `canSave` refuses an unchanged draft, a
+blank name, or a save already in flight.
+
+`tests/api-client.test.mjs` stubs `fetch` to check the URL, method, headers and
+body - including that `id` is left out of the payload - and that a non-2xx
+response throws with the method, path and status.
+
+`tests/api-contract.test.mjs` starts `dotnet run` in `server/`, waits for port
+5080, then exercises every endpoint against the real API: camelCase keys, the
+seed distribution, 404s, whitespace trimming, the blank-name 400, that a body
+`id` cannot re-key a record, that an edit survives a re-read, and that the CORS
+header names the Vite origin. It reuses an already-running API if it finds one.
+
+If the .NET SDK is missing, that file fails immediately with the reason rather
+than timing out - it is the test that reproduces
+`Failed to fetch. Is the API running on http://localhost:5080?`.
 
 ## Design notes
 
@@ -91,6 +131,11 @@ there is no second render pass and no window where a stale record is on screen.
 `byStatus` grouping are computed from `records` on every render (`byStatus`
 memoised on `records`). Nothing calls `setState` with a count, so the numbers
 cannot drift out of sync with the data.
+
+**Pure logic lives in `lib/records.js`.** `replaceRecord`, `groupByStatus`,
+`findSelected`, `isDirty` and `canSave` are plain functions with no React in
+them, so the behaviour the reviewer cares about is unit-tested directly rather
+than inferred from the UI.
 
 **Updates are immutable.** Saving replaces one element via
 `records.map(r => r.id === saved.id ? saved : r)` — a new array with a new object
@@ -112,3 +157,4 @@ No packages were added beyond the two templates.
 
 - `client/package.json` is the unmodified `npm create vite@latest -- --template react` dependency set (react, react-dom, vite, @vitejs/plugin-react, oxlint, types).
 - `server/server.csproj` has no `<PackageReference>` at all.
+- The root `package.json` holds test scripts only and has no dependencies.

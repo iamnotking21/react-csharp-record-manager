@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { canSave, isDirty } from '../lib/records';
 
 const STATUSES = ['Active', 'On Hold', 'Completed'];
 
@@ -29,12 +30,7 @@ export default function RecordDetail({ selected, onSave }) {
     );
   }
 
-  const dirty =
-    selected !== null &&
-    (draft.name !== selected.name ||
-      draft.category !== selected.category ||
-      draft.status !== selected.status ||
-      draft.description !== selected.description);
+  const dirty = isDirty(draft, selected);
 
   function setField(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -101,7 +97,7 @@ export default function RecordDetail({ selected, onSave }) {
         </label>
 
         <div className="form__actions">
-          <button type="submit" disabled={!dirty || saving || !draft.name.trim()}>
+          <button type="submit" disabled={!canSave(draft, selected, saving)}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           {dirty && !saving && <span className="form__hint">Unsaved changes</span>}
